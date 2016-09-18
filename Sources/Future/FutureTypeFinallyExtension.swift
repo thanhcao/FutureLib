@@ -11,18 +11,18 @@
 extension FutureType {
 
     public final func finally(
-        ec: ExecutionContext = GCDAsyncExecutionContext(),
+        _ ec: ExecutionContext = GCDAsyncExecutionContext(),
         _ ct: CancellationTokenType = CancellationTokenNone(),
-        f: ResultType -> ()) {
+        f: (ResultType) -> ()) {
         onComplete(ec: ec, ct: ct, f: f)
     }
 
 
-    @warn_unused_result
+    
     public final func finally<U>(
-        ec: ExecutionContext = GCDAsyncExecutionContext(),
+        _ ec: ExecutionContext = GCDAsyncExecutionContext(),
         _ ct: CancellationTokenType = CancellationTokenNone(),
-        f: ResultType -> U)
+        f: @escaping (ResultType) -> U)
         -> Future<U> {
         let returnedFuture = Future<U>()
         onComplete(ec: ec, ct: ct) { [weak returnedFuture] result in
@@ -35,11 +35,11 @@ extension FutureType {
     }
 
 
-    @warn_unused_result
+    
     public final func finally<U>(
-        ec: ExecutionContext = GCDAsyncExecutionContext(),
+        _ ec: ExecutionContext = GCDAsyncExecutionContext(),
         _ ct: CancellationTokenType = CancellationTokenNone(),
-        f: ResultType throws -> U)
+        f: @escaping (ResultType) throws -> U)
         -> Future<U> {
         let returnedFuture = Future<U>()
         onComplete(ec: ec, ct: ct) { [weak returnedFuture] result in
@@ -56,11 +56,11 @@ extension FutureType {
     }
 
 
-    @warn_unused_result 
+    
     public final func finally<U>(
-        ec: ExecutionContext = GCDAsyncExecutionContext(),
+        _ ec: ExecutionContext = GCDAsyncExecutionContext(),
         _ ct: CancellationTokenType = CancellationTokenNone(),
-        f: ResultType throws -> Future<U>)
+        f: @escaping (ResultType) throws -> Future<U>)
         -> Future<U> {
         let returnedFuture = Future<U>()
         onComplete(ec: SynchronousCurrent(), ct: ct) { [weak returnedFuture] result -> () in

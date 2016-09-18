@@ -13,13 +13,13 @@ import Dispatch
 /**
  Defines errors which belong to the domain "Promise".
 */
-public enum PromiseError: Int, ErrorType {
+public enum PromiseError: Int, Error {
 
     /// Specifies that the promise has been deinitialized before its associated future has been completed.
-    case BrokenPromise = -1
+    case brokenPromise = -1
     
     /// Specifies that the promise has been completed due to a timeout.
-    case Timeout = -2
+    case timeout = -2
 
 }
 
@@ -67,11 +67,11 @@ public enum PromiseError: Int, ErrorType {
  obviously there is nothing which is interested in the result anymore and the task
  can be aborted in order to release resources.
  */
-public class Promise<T> {
+open class Promise<T> {
     public typealias ValueType = T
 
-    private var _future: RootFuture<T>?
-    private weak var _weakFuture: RootFuture<T>?
+    fileprivate var _future: RootFuture<T>?
+    fileprivate weak var _weakFuture: RootFuture<T>?
 
     /**
      Initializes the promise whose future is pending.
@@ -97,8 +97,8 @@ public class Promise<T> {
 
      - parameter error: The error which rejects the future.
      */
-    public init(error: ErrorType) {
-        _future = RootFuture<T>(error: error)
+    public init(error: Error) {
+        _future = RootFuture<T>(value: error)
         _weakFuture = _future
     }
 
@@ -110,9 +110,9 @@ public class Promise<T> {
     deinit {
         if let future = _weakFuture {
             if future.sync.isSynchronized() {
-                future._tryComplete(Try(error: PromiseError.BrokenPromise))
+                future._tryComplete(Try(error: PromiseError.brokenPromise))
             } else {
-                future.tryComplete(Try(error: PromiseError.BrokenPromise))
+                future.tryComplete(Try(error: PromiseError.brokenPromise))
             }
         }
     }
@@ -133,11 +133,11 @@ public class Promise<T> {
 
      - parameter f: The closure
      */
-    public final func onRevocation(f:()->()) {
+    public final func onRevocation(_ f:@escaping ()->()) {
         if let future = _weakFuture {
             future.onRevocation = f
         } else {
-            dispatch_async(dispatch_get_global_queue(0, 0), f)
+            DispatchQueue.global(priority: 0).async(execute: f)
         }
     }
 
@@ -169,7 +169,7 @@ public class Promise<T> {
 
      - parameter value: The value which the promise will be bound to.
      */
-    public final func fulfill(value: T) {
+    public final func fulfill(_ value: T) {
         if let future = _weakFuture {
             future.complete(Try(value))
         }
@@ -184,7 +184,7 @@ public class Promise<T> {
 
      - parameter error: The error which the promise will be bound to.
     */
-    public final func reject(error: ErrorType) {
+    public final func reject(_ error: Error) {
         if let future = _weakFuture {
             future.complete(Try(error: error))
         }
@@ -202,7 +202,7 @@ public class Promise<T> {
 
      - parameter result: The result which the promise will be bound to.
      */
-    public final func resolve(result: Try<T>) {
+    public final func resolve(_ result: Try<T>) {
         if let future = _weakFuture {
             future.complete(result)
         }
@@ -217,7 +217,7 @@ public class Promise<T> {
      
      - parameter result: The result which the promise will be bound to.
      */
-    public final func tryResolve(result: Try<T>) {
+    public final func tryResolve(_ result: Try<T>) {
         if let future = _weakFuture {
             future.tryComplete(result)
         }
@@ -233,7 +233,7 @@ public class Promise<T> {
 
      - parameter future: The future whose eventual result will complete `self`.
      */
-    public final func resolve(future: Future<T>) {
+    public final func resolve(_ future: Future<T>) {
         if let future = _weakFuture {
             future.completeWith(future)
         }

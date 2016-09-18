@@ -11,64 +11,64 @@ import Dispatch
 private enum CancellationState {
     typealias ClosureRegistryType = ClosureRegistry<Bool>
 
-    case Pending(ClosureRegistryType)
-    case Completed(Bool)
+    case pending(ClosureRegistryType)
+    case completed(Bool)
 
 
-    private init() {
-        self = Pending(ClosureRegistryType())
+    fileprivate init() {
+        self = .pending(ClosureRegistryType())
     }
 
 
-    private init(completed: Bool) {
-        self = Completed(completed)
+    fileprivate init(completed: Bool) {
+        self = self.completed(completed)
     }
 
 
-    private var isCompleted: Bool {
+    fileprivate var isCompleted: Bool {
         switch self {
-        case .Completed: return true
+        case .completed: return true
         default: return false
         }
     }
 
 
-    private var isCancelled: Bool {
+    fileprivate var isCancelled: Bool {
         switch self {
-        case .Completed(let v): return v
+        case .completed(let v): return v
         default: return false
         }
     }
 
 
-    private mutating func cancel() {
+    fileprivate mutating func cancel() {
         switch self {
-        case .Pending(let state):
+        case .pending(let state):
             self = CancellationState(completed: true)
             state.resume(true)
-        case .Completed: break
+        case .completed: break
         }
     }
 
 
-    private mutating func complete() {
+    fileprivate mutating func complete() {
         switch self {
-        case .Pending(let state):
+        case .pending(let state):
             self = CancellationState(completed: false)
             state.resume(false)
-        case .Completed: break
+        case .completed: break
         }
     }
 
 
-    private mutating func register(f: (Bool)->()) -> Int {
+    fileprivate mutating func register(_ f: (Bool)->()) -> Int {
         var result: Int = -1
         switch self {
-        case .Pending(var cr):
+        case .pending(var cr):
             result = cr.register(f)
-            self = .Pending(cr)
+            self = .pending(cr)
 
-        case .Completed(let cancelled): f(cancelled)
+        case .completed(let cancelled): f(cancelled)
         }
         return result
     }
@@ -79,9 +79,9 @@ private enum CancellationState {
 
      - parameter id: The `id` representing the closure which has been obtained with `onCancel`.
      */
-    private func unregister(id: Int) {
+    fileprivate func unregister(_ id: Int) {
         switch self {
-        case .Pending(var cr):
+        case .pending(var cr):
             cr.unregister(id)
         default: break
         }
@@ -90,16 +90,16 @@ private enum CancellationState {
 
 }
 
-private let syncQueue = dispatch_queue_create("cancellation.sync_queue", DISPATCH_QUEUE_SERIAL)
+private let syncQueue = DispatchQueue(label: "cancellation.sync_queue", attributes: [])
 
 internal final class SharedCancellationState {
 
-    private var value = CancellationState()
+    fileprivate var value = CancellationState()
 
 
     final var isCompleted: Bool {
         var result = false
-        dispatch_sync(syncQueue) {
+        syncQueue.sync {
             result = self.value.isCompleted
         }
         return result
@@ -108,7 +108,7 @@ internal final class SharedCancellationState {
 
     final var isCancelled: Bool {
         var result = false
-        dispatch_sync(syncQueue) {
+        syncQueue.sync {
             result = self.value.isCancelled
         }
         return result
@@ -116,14 +116,14 @@ internal final class SharedCancellationState {
 
 
     final func cancel() {
-        dispatch_async(syncQueue) {
+        syncQueue.async {
             self.value.cancel()
         }
     }
 
 
     final func complete() {
-        dispatch_async(syncQueue) {
+        syncQueue.async {
             self.value.complete()
         }
     }
@@ -139,7 +139,7 @@ internal final class SharedCancellationState {
      */
     final func register(on executor: ExecutionContext, f: (Bool)->()) -> Int {
         var result = -1
-        dispatch_sync(syncQueue) {
+        syncQueue.sync {
             result = self.value.register { cancelled in
                 executor.execute {
                     f(cancelled)
@@ -155,8 +155,8 @@ internal final class SharedCancellationState {
 
      - parameter id: The `id` representing the closure which has been obtained with `onCancel`.
      */
-    final func unregister(id: Int) {
-        dispatch_async(syncQueue) {
+    final func unregister(_ id: Int) {
+        syncQueue.async {
             self.value.unregister(id)
         }
     }
@@ -166,7 +166,7 @@ internal final class SharedCancellationState {
         cancelable: Cancelable,
         f: (Cancelable)->()) -> Int {
         var result: Int = -1
-        dispatch_sync(syncQueue) {
+        syncQueue.sync {
             result = self.value.register { cancelled in
                 if cancelled {
                     executor.execute {
@@ -183,7 +183,7 @@ internal final class SharedCancellationState {
 
     final func onCancel(on executor: ExecutionContext, f: ()->()) -> Int {
         var result: Int = -1
-        dispatch_sync(syncQueue) {
+        syncQueue.sync {
             result = self.value.register { cancelled in
                 if cancelled {
                     executor.execute {

@@ -10,18 +10,18 @@ import Dispatch
 /**
  Implements a cancelable timer with precise timing.
 */
-public class Timer {
+open class Timer {
 
     public typealias TimerHandler = (Timer) -> ()
     public typealias TimeInterval = Double
 
 
-    private let _timer: dispatch_source_t
-    private let _delay: Int64
-    private let _interval: UInt64
-    private let _leeway: UInt64
-    private var _cancelId: Int = -1
-    private let _cancellationToken: CancellationTokenType
+    fileprivate let _timer: DispatchSource
+    fileprivate let _delay: Int64
+    fileprivate let _interval: UInt64
+    fileprivate let _leeway: UInt64
+    fileprivate var _cancelId: Int = -1
+    fileprivate let _cancellationToken: CancellationTokenType
 
 
     /**
@@ -51,17 +51,17 @@ public class Timer {
     public init(delay: TimeInterval, tolerance: TimeInterval,
         cancellationToken: CancellationTokenType = CancellationTokenNone(),
         on ec: ExecutionContext = GCDAsyncExecutionContext(),
-        f: TimerHandler) {
+        f: @escaping TimerHandler) {
         _delay = Int64((delay * Double(NSEC_PER_SEC)) + 0.5)
-        _interval = DISPATCH_TIME_FOREVER
+        _interval = DispatchTime.distantFuture
         _leeway = UInt64((tolerance * Double(NSEC_PER_SEC)) + 0.5)
-        _timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, tolerance > 0 ? 0 : DISPATCH_TIMER_STRICT, DISPATCH_TARGET_QUEUE_DEFAULT)
+        _timer = DispatchSource.makeTimerSource(flags: tolerance > 0 ? 0 : DispatchSource.TimerFlags.strict, queue: DISPATCH_TARGET_QUEUE_DEFAULT) /*Migrator FIXME: Use DispatchSourceTimer to avoid the cast*/ as! DispatchSource
         _cancellationToken = cancellationToken
         _cancelId = cancellationToken.onCancel(on: GCDAsyncExecutionContext()) {
-            dispatch_source_cancel(self._timer)
+            self._timer.cancel()
         }
-        dispatch_source_set_event_handler(_timer) {
-            dispatch_source_cancel(self._timer) // one shot timer
+        _timer.setEventHandler {
+            self._timer.cancel() // one shot timer
             ec.execute {
                 f(self)
             }
@@ -97,16 +97,16 @@ public class Timer {
     public init(delay: TimeInterval, interval: TimeInterval, tolerance: TimeInterval,
         cancellationToken: CancellationTokenType = CancellationTokenNone(),
         ec: ExecutionContext = GCDAsyncExecutionContext(),
-        f: TimerHandler) {
+        f: @escaping TimerHandler) {
         _delay = Int64((delay * Double(NSEC_PER_SEC)) + 0.5)
         _interval = UInt64((interval * Double(NSEC_PER_SEC)) + 0.5)
         _leeway = UInt64((tolerance * Double(NSEC_PER_SEC)) + 0.5)
-        _timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, tolerance > 0 ? 0 : DISPATCH_TIMER_STRICT, DISPATCH_TARGET_QUEUE_DEFAULT)
+        _timer = DispatchSource.makeTimerSource(flags: tolerance > 0 ? 0 : DispatchSource.TimerFlags.strict, queue: DISPATCH_TARGET_QUEUE_DEFAULT) /*Migrator FIXME: Use DispatchSourceTimer to avoid the cast*/ as! DispatchSource
         _cancellationToken = cancellationToken
         _cancelId = cancellationToken.onCancel(on: GCDAsyncExecutionContext()) {
-            dispatch_source_cancel(self._timer)
+            self._timer.cancel()
         }
-        dispatch_source_set_event_handler(_timer) {
+        _timer.setEventHandler {
             ec.execute {
                 f(self)
             }
@@ -126,9 +126,9 @@ public class Timer {
      The timer fires once after the specified delay plus the specified tolerance.
     */
     public final func resume() {
-        let time = dispatch_time(DISPATCH_TIME_NOW, _delay)
-        dispatch_source_set_timer(_timer, time, _interval, _leeway)
-        dispatch_resume(_timer)
+        let time = DispatchTime.now() + Double(_delay) / Double(NSEC_PER_SEC)
+        _timer.setTimer(start: time, interval: _interval, leeway: _leeway)
+        _timer.resume()
     }
 
 
@@ -137,7 +137,7 @@ public class Timer {
      Returns `True` if the timer has not yet been fired and if it is not cancelled.
     */
     public final var isValid: Bool {
-        return 0 == dispatch_source_testcancel(_timer)
+        return 0 == _timer.isCancelled
     }
 
     /**
@@ -145,7 +145,7 @@ public class Timer {
      of the cancellation token.
     */
     public final func cancel() {
-        dispatch_source_cancel(_timer)
+        _timer.cancel()
         _cancellationToken.unregister(_cancelId)
     }
 

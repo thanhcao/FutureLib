@@ -7,7 +7,7 @@
 
 import Dispatch
 
-extension SequenceType {
+extension Sequence {
 
     /**
      Transforms a Sequence of T's into a `Future<[U]>` using the provided task
@@ -37,11 +37,11 @@ extension SequenceType {
      - parameter ct: A cancellation token.
      - parameter task: A closure which is applied to each element in `self`.
      */
-    @warn_unused_result
+    
     public func traverse<U>(
-        ec ec: ExecutionContext = ConcurrentAsync(),
+        ec: ExecutionContext = ConcurrentAsync(),
         ct: CancellationTokenType = CancellationTokenNone(),
-        task: Generator.Element throws -> Future<U>)
+        task: (Iterator.Element) throws -> Future<U>)
         -> Future<[U]> {
         typealias FutureArrayFuture = Future<[Future<U>]>
         let initial: FutureArrayFuture = FutureArrayFuture(value: [Future<U>]())
@@ -65,11 +65,11 @@ extension SequenceType {
 // FutureType.ResultType is Try<Generator.Element.ValueType>
 // This "imports" specializations defined in protocol extension FutureType where
 // ResultType == Try<ValueType>
-extension SequenceType
-    where Generator.Element: FutureType,
-    Generator.Element.ResultType == Try<Generator.Element.ValueType> {
+extension Sequence
+    where Iterator.Element: FutureType,
+    Iterator.Element.ResultType == Try<Iterator.Element.ValueType> {
 
-    typealias T = Generator.Element.ValueType
+    typealias T = Iterator.Element.ValueType
     
     /** 
      Returns a `Future` that will be completed with the optional result of the 
@@ -82,30 +82,30 @@ extension SequenceType
      - parameter pred: The predicate which indicates if it's a match.
      - returns: A `Future` holding the optional result of the search.
     */
-    @warn_unused_result
+    
     public func find(
-        ec: ExecutionContext = ConcurrentAsync(), 
+        _ ec: ExecutionContext = ConcurrentAsync(), 
         ct: CancellationTokenType = CancellationTokenNone(),
-        pred: T -> Bool) -> Future<T?> 
+        pred: @escaping (T) -> Bool) -> Future<T?> 
     {
-        func searchNext(inout gen: Self.Generator) -> Future<T?> {
+        func searchNext(_ gen: inout Self.Iterator) -> Future<T?> {
             if let elem = gen.next() {
                 return elem.transformWith(ec: ec, ct: ct) { result in 
                     switch result {
-                    case .Success(let value) where pred(value): return Future<T?>.succeeded(.Some(value)) 
+                    case .success(let value) where pred(value): return Future<T?>.succeeded(.some(value)) 
                     default:
                         if ct.isCancellationRequested {
-                            return Future(error: CancellationError.Cancelled)
+                            return Future(error: CancellationError.cancelled)
                         } else {
                             return searchNext(&gen)
                         }
                     }
                 }
             } else {
-                return Future.succeeded(.None)
+                return Future.succeeded(.none)
             }
         }
-        var gen = self.generate()
+        var gen = self.makeIterator()
         return searchNext(&gen)
     }
     
@@ -117,9 +117,9 @@ extension SequenceType
      - parameter ct: A cancellation token.
      - returns: A `Future` holding the optional result of the search.
      */
-    @warn_unused_result
+    
     public func firstCompleted(
-        ct: CancellationTokenType = CancellationTokenNone())
+        _ ct: CancellationTokenType = CancellationTokenNone())
         -> Future<T> 
     {
         let promise = Promise<T>()
@@ -156,11 +156,11 @@ extension SequenceType
      - parameter combine: The combine function.
      - returns: A future.
     */
-    @warn_unused_result
-    public func fold<U>(ec ec: ExecutionContext = ConcurrentAsync(),
+    
+    public func fold<U>(ec: ExecutionContext = ConcurrentAsync(),
         ct: CancellationTokenType = CancellationTokenNone(),
         initial: U,
-        combine: (U, Generator.Element.ValueType) throws -> U)
+        combine: @escaping (U, Iterator.Element.ValueType) throws -> U)
         -> Future<U> {
         return self.reduce(Future.succeeded(initial)) { (combined, element) -> Future<U> in
             return combined.flatMap(ec: SynchronousCurrent(), ct: ct) { (combinedValue) -> Future<U> in
@@ -180,16 +180,16 @@ extension SequenceType
      - parameter ct: A cancellation token.
      - returns: A future.
      */
-    @warn_unused_result
-    public func sequence(ct ct: CancellationTokenType = CancellationTokenNone())
-        -> Future<[Generator.Element.ValueType]> {
+    
+    public func sequence(ct: CancellationTokenType = CancellationTokenNone())
+        -> Future<[Iterator.Element.ValueType]> {
         return fold(ec: SynchronousCurrent(), ct: ct, initial: ()) { _, _ -> Void in }
         .map {
             return self.map {
                 if let r = $0.result {
                     switch r {
-                    case .Success(let v): return v
-                    case .Failure: fatalError()
+                    case .success(let v): return v
+                    case .failure: fatalError()
                     }
                 } else {
                     fatalError()
@@ -199,9 +199,9 @@ extension SequenceType
     }
 
 
-    internal func sequence2(ct ct: CancellationTokenType = CancellationTokenNone())
-        -> Future<[Generator.Element.ValueType]> {
-        typealias U = Generator.Element.ValueType
+    internal func sequence2(ct: CancellationTokenType = CancellationTokenNone())
+        -> Future<[Iterator.Element.ValueType]> {
+        typealias U = Iterator.Element.ValueType
         return self.fold(ec: SynchronousCurrent(), ct: ct, initial: [U]()) { (a, element) -> [U] in
             return a + [element]  // TODO: check performance: multiple copies.
         }
@@ -218,12 +218,12 @@ extension SequenceType
      - parameter ct: A cancellation token.
      - returns: A future.
      */
-    @warn_unused_result public
-    func results(ct ct: CancellationTokenType = CancellationTokenNone())
-        -> Future<[Generator.Element.ResultType]> 
+    public
+    func results(ct: CancellationTokenType = CancellationTokenNone())
+        -> Future<[Iterator.Element.ResultType]> 
     {
         let promise = Promise<[Try<T>]>()
-        var gen = self.generate()
+        var gen = self.makeIterator()
         func next() {
             if let future = gen.next() {
                 future.onComplete(ec: ConcurrentAsync(), ct: ct) { _  -> () in 

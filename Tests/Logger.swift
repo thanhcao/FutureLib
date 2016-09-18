@@ -12,14 +12,14 @@ import Darwin
 
 
 
-internal func dateTimeString(t: time_t, usec: suseconds_t, format: String) -> String {
+internal func dateTimeString(_ t: time_t, usec: suseconds_t, format: String) -> String {
     let maxSize: Int = 64
-    var buffer: [Int8] = [CChar](count: Int(maxSize), repeatedValue: 0)
+    var buffer: [Int8] = [CChar](repeating: 0, count: Int(maxSize))
     var t_tmp = t;
     let length = strftime(&buffer, maxSize, format, localtime(&t_tmp));
     assert(length > 0)
-    let s = String.fromCString(buffer)
-    let s2 = String(format: s!, usec)
+    let s = String(cString: buffer)
+    let s2 = String(format: s, usec)
     return s2
 }
 
@@ -47,7 +47,7 @@ public struct Event<T>: EventType {
     }
 
 
-    init(message: T, severity: Logger.Severity = Logger.Severity.None) {
+    init(message: T, severity: Logger.Severity = Logger.Severity.none) {
         gettimeofday(&self.timeStamp, nil)
         self.message = message
         self.severity = severity
@@ -58,9 +58,9 @@ public struct Event<T>: EventType {
     }
 
 
-    private (set) public var timeStamp: timeval = timeval()
+    fileprivate (set) public var timeStamp: timeval = timeval()
     public let threadId = pthread_mach_thread_np(pthread_self())
-    public let gcd_queue: String? = String.fromCString(dispatch_queue_get_label(DISPATCH_CURRENT_QUEUE_LABEL))
+    public let gcd_queue: String? = String(cString: DISPATCH_CURRENT_QUEUE_LABEL.label)
     public let category: String
     public let severity: Logger.Severity
     public let message: T
@@ -70,7 +70,7 @@ public struct Event<T>: EventType {
 }
 
 
-public struct WriteOptions: OptionSetType {
+public struct WriteOptions: OptionSet {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
 
@@ -78,7 +78,7 @@ public struct WriteOptions: OptionSetType {
     public static let Sync         = WriteOptions(rawValue: 1 << 0)
 }
 
-public struct EventOptions: OptionSetType {
+public struct EventOptions: OptionSet {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
 
@@ -112,7 +112,7 @@ internal struct DateTime {
     let min: UInt8
     let sec: Double
 
-    private init(tval: timeval, localtime: Bool = true) {
+    fileprivate init(tval: timeval, localtime: Bool = true) {
         var t_tmp = tval;
         var t: tm = tm()
         localtime_r(&t_tmp.tv_sec, &t)
@@ -125,12 +125,12 @@ internal struct DateTime {
         sec = Double(t.tm_sec) + Double(tval.tv_usec)/(1000*1000)
     }
 
-    internal static func localTime(tval: timeval) -> DateTime {
+    internal static func localTime(_ tval: timeval) -> DateTime {
         return DateTime(tval: tval, localtime: true)
     }
 
 
-    internal static func defaultDateTimeFormatter(tval: timeval) -> String {
+    internal static func defaultDateTimeFormatter(_ tval: timeval) -> String {
         let t = DateTime.localTime(tval)
         let s: String = String(format: "%hu-%.2hhu-%.2hhu %.2hhu:%.2hhu:%06.3f", t.year, t.month, t.day, t.hour, t.min, t.sec)
         return s
@@ -145,7 +145,7 @@ public protocol EventTargetType  {
     var name: String { get }
     var writeOptions: WriteOptions { get set }
 
-    mutating func writeEvent<T>(event: Event<T>)
+    mutating func writeEvent<T>(_ event: Event<T>)
 }
 
 
@@ -161,36 +161,36 @@ public protocol StreamEventTargetType: EventTargetType, Flushable {
 
     var eventOptions: EventOptions { get set }
 
-    var dateFormat: (timeval: timeval)-> String { get set }
+    var dateFormat: (_ timeval: timeval)-> String { get set }
 
     func flush()
 }
 
 
 
-public protocol FlushableOutputStreamType: OutputStreamType, Flushable {
+public protocol FlushableOutputStreamType: OutputStream, Flushable {
 }
 
 
 
 private struct StdOutputStream: FlushableOutputStreamType {
-    func write(string: String) { fputs(string, stdout) }
+    func write(_ string: String) { fputs(string, stdout) }
     func flush() { fflush(stdout)}
 }
 
 
 
 private struct StdErrorStream: FlushableOutputStreamType {
-    func write(string: String) { fputs(string, stdout) }
+    func write(_ string: String) { fputs(string, stdout) }
     func flush() { fflush(stderr)}
 }
 
 
 
-public class ConsoleEventTarget: StreamEventTarget {
+open class ConsoleEventTarget: StreamEventTarget {
 
-    static private var stdOutputStream = StdOutputStream()
-    static private let _executionQueue = dispatch_queue_create("ConsoleEventTarget queue", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0))
+    static fileprivate var stdOutputStream = StdOutputStream()
+    static fileprivate let _executionQueue = DispatchQueue(label: "ConsoleEventTarget queue", attributes: dispatch_queue_attr_make_with_qos_class(DispatchQueue.Attributes(), DispatchQoS.QoSClass.userInteractive, 0))
 
     public init() {
         super.init(name: "Console", ostream: StdOutputStream(), executionQueue: ConsoleEventTarget._executionQueue)
@@ -200,22 +200,22 @@ public class ConsoleEventTarget: StreamEventTarget {
 
 
 
-public class StreamEventTarget: StreamEventTargetType {
+open class StreamEventTarget: StreamEventTargetType {
 
-    private (set) public var name: String
-    public let executionQueue: dispatch_queue_t
+    fileprivate (set) open var name: String
+    open let executionQueue: DispatchQueue
 
     internal var _ostream: FlushableOutputStreamType
-    private var _writeOptions: WriteOptions
-    private var _eventOptions: EventOptions
-    private var _dateFormat: (timeval: timeval)-> String = DateTime.defaultDateTimeFormatter
+    fileprivate var _writeOptions: WriteOptions
+    fileprivate var _eventOptions: EventOptions
+    fileprivate var _dateFormat: (_ timeval: timeval)-> String = DateTime.defaultDateTimeFormatter
 
 
     public init(name: String,
         ostream: FlushableOutputStreamType,
         writeOptions: WriteOptions = WriteOptions(),
         eventOptions: EventOptions = EventOptions([.TimeStamp, .ThreadId, .GCDQueue, .Category, .Severity, .Function]),
-        executionQueue eq: dispatch_queue_t = dispatch_queue_create("", DISPATCH_QUEUE_SERIAL))
+        executionQueue eq: DispatchQueue = DispatchQueue(label: "", attributes: []))
     {
         self.name = name
         _ostream = ostream
@@ -225,32 +225,32 @@ public class StreamEventTarget: StreamEventTargetType {
     }
 
     deinit {
-        dispatch_barrier_sync(executionQueue) {}
+        executionQueue.sync(flags: .barrier, execute: {}) 
     }
 
 
-    public func writeEvent<T>(event: Event<T>) {
+    open func writeEvent<T>(_ event: Event<T>) {
         StreamEventTarget.writeEvent(&_ostream, event: event, writeOptions: writeOptions, eventOptions: eventOptions, dateFormat: dateFormat, executionQueue: executionQueue)
     }
 
-    public func flush() {
+    open func flush() {
         _ostream.flush()
     }
 
 
     internal static func writeMessage<T>(
-        inout ostream: FlushableOutputStreamType,
+        _ ostream: inout FlushableOutputStreamType,
         message: T,
         options: EventOptions)
     {
-        let messageString = String(message)
+        let messageString = String(describing: message)
         if !messageString.isEmpty {
             ostream.write(messageString)
         }
     }
 
     internal static func writeVerboseMessage<T>(
-        inout ostream: FlushableOutputStreamType,
+        _ ostream: inout FlushableOutputStreamType,
         message: T,
         options: EventOptions)
     {
@@ -263,12 +263,12 @@ public class StreamEventTarget: StreamEventTargetType {
 
 
     internal static func writeEvent<T>(
-        inout ostream: FlushableOutputStreamType,
+        _ ostream: inout FlushableOutputStreamType,
         event: Event<T>,
         writeOptions: WriteOptions,
         eventOptions: EventOptions,
-        dateFormat: (timeval: timeval)-> String,
-        executionQueue eq: dispatch_queue_t)
+        dateFormat: @escaping (_ timeval: timeval)-> String,
+        executionQueue eq: DispatchQueue)
     {
         let f: ()->() = {
             var hasSeparator = true
@@ -335,10 +335,10 @@ public class StreamEventTarget: StreamEventTargetType {
             ostream.write("\n")
         }
         if writeOptions.contains(.Sync) {
-            dispatch_sync(eq, f)
+            eq.sync(execute: f)
         }
         else {
-            dispatch_async(eq, f)
+            eq.async(execute: f)
         }
     }
 
@@ -346,13 +346,13 @@ public class StreamEventTarget: StreamEventTargetType {
     final public var writeOptions: WriteOptions {
         get {
             var result: WriteOptions = .None
-            dispatch_sync(executionQueue) {
+            executionQueue.sync {
                 result = self._writeOptions
             }
             return result
         }
         set {
-            dispatch_async(executionQueue) {
+            executionQueue.async {
                 self._writeOptions = newValue
             }
         }
@@ -361,29 +361,29 @@ public class StreamEventTarget: StreamEventTargetType {
     final public var eventOptions: EventOptions {
         get {
             var result: EventOptions = .None
-            dispatch_sync(executionQueue) {
+            executionQueue.sync {
                 result = self._eventOptions
             }
             return result
         }
         set {
-            dispatch_async(executionQueue) {
+            executionQueue.async {
                 self._eventOptions = newValue
             }
         }
     }
 
 
-    final public var dateFormat: (timeval: timeval)-> String {
+    final public var dateFormat: (_ timeval: timeval)-> String {
         get {
-            var result: (timeval: timeval)-> String = {_ in return ""}
-            dispatch_sync(executionQueue) {
+            var result: (_ timeval: timeval)-> String = {_ in return ""}
+            executionQueue.sync {
                 result = self._dateFormat
             }
             return result
         }
         set {
-            dispatch_async(executionQueue) {
+            executionQueue.async {
                 self._dateFormat = newValue
             }
         }
@@ -393,95 +393,95 @@ public class StreamEventTarget: StreamEventTargetType {
 
 
 
-public class Logger {
+open class Logger {
 
-    private let _syncQueue = dispatch_queue_create("Logger sync_queue", DISPATCH_QUEUE_CONCURRENT)
+    fileprivate let _syncQueue = DispatchQueue(label: "Logger sync_queue", attributes: DispatchQueue.Attributes.concurrent)
 
 
 
     public enum Severity: Int {
-        case None, Error, Warning, Info, Debug, Trace
+        case none, error, warning, info, debug, trace
     }
 
-    private var _eventTargets: [EventTargetType]
-    private let _category: String
+    fileprivate var _eventTargets: [EventTargetType]
+    fileprivate let _category: String
 
-    public var logLevel = Severity.Error
+    open var logLevel = Severity.error
 
 
-    public var eventTargets: [EventTargetType] {
+    open var eventTargets: [EventTargetType] {
         get {
             var result = [EventTargetType]()
-            dispatch_sync(self._syncQueue) {
+            self._syncQueue.sync {
                 result = self._eventTargets
             }
             return result
         }
         set {
-            dispatch_barrier_async(self._syncQueue) {
+            self._syncQueue.async(flags: .barrier, execute: {
                 self._eventTargets = newValue
-            }
+            }) 
         }
     }
 
 
-    public init(@autoclosure category: ()-> String, verbosity: Severity, targets: [EventTargetType] = [ConsoleEventTarget()])
+    public init(category: @autoclosure ()-> String, verbosity: Severity, targets: [EventTargetType] = [ConsoleEventTarget()])
     {
         _category = category()
         self.logLevel = verbosity
         _eventTargets = targets
     }
 
-    convenience public init(@autoclosure category: ()-> String, targets: [EventTargetType] = [ConsoleEventTarget()]) {
-        self.init(category: category, verbosity: Severity.Info, targets: targets)
+    convenience public init(category: @autoclosure ()-> String, targets: [EventTargetType] = [ConsoleEventTarget()]) {
+        self.init(category: category, verbosity: Severity.info, targets: targets)
     }
 
-    public func writeln<T>(@autoclosure object: ()-> T) {
-        let event = Event(category: _category, severity: Severity.None, message: object())
+    open func writeln<T>(_ object: @autoclosure ()-> T) {
+        let event = Event(category: _category, severity: Severity.none, message: object())
         for var et in eventTargets {
             et.writeEvent(event)
         }
     }
 
-    public func Error<T>(@autoclosure object: ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
-        if (self.logLevel.rawValue > Severity.None.rawValue) {
-            let event = Event(category: self._category, severity: Severity.Error, message: object(), function: function, file: file, line: line)
+    open func Error<T>(_ object: @autoclosure ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
+        if (self.logLevel.rawValue > Severity.none.rawValue) {
+            let event = Event(category: self._category, severity: Severity.error, message: object(), function: function, file: file, line: line)
             for var et in eventTargets {
                 et.writeEvent(event)
             }
         }
     }
 
-    public func Warning<T>(@autoclosure object: ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
-        if (self.logLevel.rawValue > Severity.Error.rawValue) {
-            let event = Event(category: self._category, severity: Severity.Warning, message: object(), function: function, file: file, line: line)
+    open func Warning<T>(_ object: @autoclosure ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
+        if (self.logLevel.rawValue > Severity.error.rawValue) {
+            let event = Event(category: self._category, severity: Severity.warning, message: object(), function: function, file: file, line: line)
             for var et in eventTargets {
                 et.writeEvent(event)
             }
         }
     }
 
-    public func Info<T>(@autoclosure object: ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
-        if (self.logLevel.rawValue > Severity.Warning.rawValue) {
-            let event = Event(category: self._category, severity: Severity.Info, message: object(), function: function, file: file, line: line)
+    open func Info<T>(_ object: @autoclosure ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
+        if (self.logLevel.rawValue > Severity.warning.rawValue) {
+            let event = Event(category: self._category, severity: Severity.info, message: object(), function: function, file: file, line: line)
             for var et in eventTargets {
                 et.writeEvent(event)
             }
         }
     }
 
-    public func Debug<T>(@autoclosure object: ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
-        if (self.logLevel.rawValue > Severity.Info.rawValue) {
-            let event = Event(category: self._category, severity: Severity.Debug, message: object(), function: function, file: file, line: line)
+    open func Debug<T>(_ object: @autoclosure ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
+        if (self.logLevel.rawValue > Severity.info.rawValue) {
+            let event = Event(category: self._category, severity: Severity.debug, message: object(), function: function, file: file, line: line)
             for var et in eventTargets {
                 et.writeEvent(event)
             }
         }
     }
 
-    public func Trace<T>(@autoclosure object: ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
-        if (self.logLevel.rawValue > Severity.Debug.rawValue) {
-            let event = Event(category: self._category, severity: Severity.Trace, message: object(), function: function, file: file, line: line)
+    open func Trace<T>(_ object: @autoclosure ()-> T, file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
+        if (self.logLevel.rawValue > Severity.debug.rawValue) {
+            let event = Event(category: self._category, severity: Severity.trace, message: object(), function: function, file: file, line: line)
             for var et in eventTargets {
                 et.writeEvent(event)
             }

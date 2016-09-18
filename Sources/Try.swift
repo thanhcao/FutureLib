@@ -27,7 +27,7 @@ public protocol TryType {
 
      - parameter error: The error with which `self` will be initialized.
      */
-    init(error: ErrorType)
+    init(error: Error)
 
     /**
      Creates and initializes a `Try` with the return value of the given
@@ -36,7 +36,7 @@ public protocol TryType {
 
      - parameter f: A closure whose result will initialize `self`.
      */
-    init(@noescape _ f: Void throws -> ValueType)
+    init(_ f: (Void) throws -> ValueType)
 
     /// - returns: `true` if self is a `Success`, other wise `false`.
     var isSuccess: Bool { get }
@@ -81,9 +81,9 @@ public enum Try<T>: TryType {
     public typealias ValueType = T
 
     /// Represents the success value of `self`.
-    case Success(ValueType)
+    case success(ValueType)
     /// Represents the error value of `self`.
-    case Failure(ErrorType)
+    case failure(Error)
 
     /**
      Creates and initializes `self` with the given value `v`.
@@ -91,7 +91,7 @@ public enum Try<T>: TryType {
      - parameter v: The value with which `self` will be initialized.
      */
     public init(_ v: T) {
-        self = Success(v)
+        self = Try.success(v)
     }
 
     /**
@@ -99,8 +99,8 @@ public enum Try<T>: TryType {
 
      - parameter error: The error with which `self` will be initialized.
      */
-    public init(error: ErrorType) {
-        self = Failure(error)
+    public init(error: Error) {
+        self = Try.failure(error)
     }
 
     /**
@@ -110,11 +110,11 @@ public enum Try<T>: TryType {
 
      - parameter f: A closure whose result will initialize `self`.
      */
-    public init(@noescape _ f: Void throws -> T) {
+    public init(_ f: (Void) throws -> T) {
         do {
-            self = Success(try f())
+            self = Try.success(try f())
         } catch let ex {
-            self = Failure(ex)
+            self = Try.failure(ex)
         }
     }
 
@@ -124,8 +124,8 @@ public enum Try<T>: TryType {
 
      - parameter f: A closure whose result will initialize `self`.
      */
-    public init(@noescape _ f: Void -> T) {
-        self = Success(f())
+    public init(_ f: (Void) -> T) {
+        self = Try.success(f())
     }
 
 
@@ -133,7 +133,7 @@ public enum Try<T>: TryType {
      - returns: `true` if self is a `Success`, other wise `false`.
     */
     public var isSuccess: Bool {
-        if case .Success = self { return true } else { return false }
+        if case .success = self { return true } else { return false }
     }
 
 
@@ -154,8 +154,8 @@ public enum Try<T>: TryType {
      */
     public func get() throws -> T {
         switch self {
-        case .Success(let value): return value
-        case .Failure(let error):
+        case .success(let value): return value
+        case .failure(let error):
             throw error
         }
     }
@@ -170,12 +170,12 @@ public enum Try<T>: TryType {
      - parameter f: The maping function.
      - returns: A `Try<U>`.
      */
-    @warn_unused_result
-    public func map<U>(@noescape f: T throws -> U) -> Try<U> {
+    
+    public func map<U>(_ f: @escaping (T) throws -> U) -> Try<U> {
         switch self {
-        case .Success(let value):
+        case .success(let value):
             return Try<U>({ try f(value) })
-        case .Failure(let error):
+        case .failure(let error):
             return Try<U>(error: error)
         }
     }
@@ -189,12 +189,12 @@ public enum Try<T>: TryType {
      - parameter f: The maping function.
      - returns: A `Try<U>`.
      */
-    @warn_unused_result
-    public func flatMap<U>(@noescape f: T -> Try<U>) -> Try<U> {
+    
+    public func flatMap<U>(_ f: (T) -> Try<U>) -> Try<U> {
         switch self {
-        case .Success(let value):
+        case .success(let value):
             return f(value)
-        case .Failure(let error):
+        case .failure(let error):
             return Try<U>(error: error)
         }
     }   
@@ -209,10 +209,10 @@ public enum Try<T>: TryType {
      - parameter f: The function applied to the failure value.     
      - returns: A `Try`.
     */
-    public func recoverWith(@noescape f: ErrorType throws -> Try) -> Try {
+    public func recoverWith(_ f: (Error) throws -> Try) -> Try {
         switch self {
-        case .Success: return self
-        case .Failure(let error):
+        case .success: return self
+        case .failure(let error):
             do {
                 return try f(error)
             } catch {
@@ -231,10 +231,10 @@ public enum Try<T>: TryType {
      - parameter f: The function applied to the failure value.     
      - returns: A `Try`.     
     */
-    public func recover(@noescape f: ErrorType throws -> T) -> Try {
+    public func recover(_ f: (Error) throws -> T) -> Try {
         switch self {
-        case .Success: return self
-        case .Failure(let error):
+        case .success: return self
+        case .failure(let error):
             do {
                 return try Try(f(error))
             } catch {
@@ -251,8 +251,8 @@ public enum Try<T>: TryType {
      */
     public func toOption() -> T?  {
         switch self {
-        case .Success(let value): return .Some(value)
-        case .Failure: return .None
+        case .success(let value): return .some(value)
+        case .failure: return .none
         }
     }
 
@@ -268,8 +268,8 @@ extension Try where T: TryType {
      */
     public func flatten() -> T {
         switch self {
-        case .Success(let value): return value
-        case .Failure(let error): return T(error: error)
+        case .success(let value): return value
+        case .failure(let error): return T(error: error)
         }
     }
 
@@ -285,8 +285,8 @@ extension Try: CustomStringConvertible, CustomDebugStringConvertible {
     /// Returns a description of `self`.
     public var description: String {
         switch self {
-            case .Success(let s): return "Success with \(s)"
-            case .Failure(let error): return "Failure with \(error)"
+            case .success(let s): return "Success with \(s)"
+            case .failure(let error): return "Failure with \(error)"
         }
     }
 

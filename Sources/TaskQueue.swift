@@ -13,7 +13,7 @@ import Dispatch
  finished it will be dequeued.
  A _task_ is simply a closure which returns a `Future`.
 */
-public class TaskQueue {
+open class TaskQueue {
 
     /**
      The type of the closure which defines a task.
@@ -21,13 +21,13 @@ public class TaskQueue {
     public typealias TaskType = () -> FutureBaseType
 
     /// Returns the dispatch queue where enqueued tasks will be started.
-    public let queue: dispatch_queue_t
+    open let queue: DispatchQueue
 
-    private var _maxConcurrentTasks: UInt = 1
-    private var _concurrentTasks: UInt = 0
-    private let _group = dispatch_group_create()
-    private let _syncQueue = dispatch_queue_create("task_queue.sync_queue", DISPATCH_QUEUE_SERIAL)
-    private var _suspended = false
+    fileprivate var _maxConcurrentTasks: UInt = 1
+    fileprivate var _concurrentTasks: UInt = 0
+    fileprivate let _group = DispatchGroup()
+    fileprivate let _syncQueue = DispatchQueue(label: "task_queue.sync_queue", attributes: [])
+    fileprivate var _suspended = false
 
     /**
      Designated initializer.
@@ -38,11 +38,11 @@ public class TaskQueue {
      be a serial dispatch queue.
     */
     public init(maxConcurrentTasks: UInt = 1,
-        queue: dispatch_queue_t =
-        dispatch_queue_create("task_queue.queue", DISPATCH_QUEUE_SERIAL)) {
+        queue: DispatchQueue =
+        DispatchQueue(label: "task_queue.queue", attributes: [])) {
         self.queue = queue
         _maxConcurrentTasks = maxConcurrentTasks
-        dispatch_set_target_queue(queue, _syncQueue)
+        queue.setTarget(queue: _syncQueue)
     }
 
     /**
@@ -53,19 +53,19 @@ public class TaskQueue {
 
      - parameter task: The task which will be enqueued.
     */
-    public final func enqueue(task: TaskType) {
-        dispatch_async(queue) {
+    public final func enqueue(_ task: @escaping TaskType) {
+        queue.async {
             self._enqueue(task)
         }
     }
 
 
-    private final func _enqueue(task: TaskType) {
-        dispatch_group_enter(self._group)
+    fileprivate final func _enqueue(_ task: TaskType) {
+        self._group.enter()
         _concurrentTasks += 1
         if _concurrentTasks >= _maxConcurrentTasks && !_suspended {
             _suspended = true
-            dispatch_suspend(queue)
+            queue.suspend()
         }
         assert(_concurrentTasks <= _maxConcurrentTasks)
         let future = task()
@@ -74,9 +74,9 @@ public class TaskQueue {
             self._concurrentTasks -= 1    
             if self._concurrentTasks < self._maxConcurrentTasks && self._suspended {
                 self._suspended = false
-                dispatch_resume(self.queue)
+                self.queue.resume()
             }
-            dispatch_group_leave(self._group)
+            self._group.leave()
         }
     }
 
@@ -91,14 +91,14 @@ public class TaskQueue {
 
      - parameter task: The task which will be enqueued as a barrier task.
      */
-    public final func enqueueBarrier(task: TaskType) {
-        dispatch_async(queue) {
-            dispatch_suspend(self.queue)
-            dispatch_group_notify(self._group, self._syncQueue) {
+    public final func enqueueBarrier(_ task: @escaping TaskType) {
+        queue.async {
+            self.queue.suspend()
+            self._group.notify(queue: self._syncQueue) {
                 let future = task()
                 future.continueWith(ec: GCDAsyncExecutionContext(self._syncQueue),
                     ct: CancellationTokenNone()) { _ in
-                    dispatch_resume(self.queue)
+                    self.queue.resume()
                 }
             }
         }
@@ -111,13 +111,13 @@ public class TaskQueue {
     public final var maxConcurrentTasks: UInt {
         get {
             var result: UInt = 0
-            dispatch_sync(_syncQueue) {
+            _syncQueue.sync {
                 result = self._maxConcurrentTasks
             }
             return result
         }
         set (value) {
-            dispatch_async(_syncQueue) {
+            _syncQueue.async {
                 self._maxConcurrentTasks = value
             }
         }
